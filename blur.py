@@ -1,7 +1,7 @@
 from PIL import Image, ImageFilter
 
 
-def blur(filename, ratio=(16/9)):
+def blur(filename, ratio=(16, 9)):
     *body, extension = filename.split(".")
     path = ".".join(body)
 
