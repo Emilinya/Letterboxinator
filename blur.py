@@ -47,7 +47,7 @@ def blur(filename: str, ratio: tuple[float, float] = (16, 9)):
     letterboxed_image.paste(image, img_box)
 
     letterboxed_image.save(
-        f"{path}_{ratio[0]:.20g}x{ratio[1]:.20g}.{extension}",
+        f"{path}_{ratio[0]:.20g}x{ratio[1]:.20g}{extension}",
         quality=95,
         icc_profile=letterboxed_image.info.get("icc_profile", ""),
     )
