@@ -1,8 +1,7 @@
+import os
 import wx
-import platform
-from blur import blur
 
-FOLDER_SEPERATOR = "\\" if platform.system() == "Windows" else "/"
+from blur import blur
 
 
 class FileDrop(wx.FileDropTarget):
@@ -10,7 +9,7 @@ class FileDrop(wx.FileDropTarget):
         wx.FileDropTarget.__init__(self)
         self.func = func
 
-    def OnDropFiles(self, x, y, filenames):
+    def OnDropFiles(self, _x: int, _y: int, filenames: list[str]):
         for filename in filenames:
             self.func(filename)
 
@@ -25,20 +24,18 @@ class InputFrame(wx.Frame):
     def __init__(self, *args, **kw):
         super(InputFrame, self).__init__(*args, **kw)
 
-        self.blur_queue = []
+        self.blur_queue: list[str] = []
 
         self.panel = wx.Panel(self)
 
-        text = wx.StaticText(
-            self.panel, label="Drag and drop an image to blur it"
-        )
+        text = wx.StaticText(self.panel, label="Drag and drop an image to blur it")
         font = text.GetFont()
         font.PointSize += 5
         bold_font = font.Bold()
         bold_font.PointSize += 5
         text.SetFont(bold_font)
 
-        self.ratio = (16, 9)
+        self.ratio: tuple[float, float] = (16, 9)
         self.ratio_label = wx.StaticText(self.panel, -1, "Goal ratio: 16x9")
         self.ratio_label.SetFont(font)
         self.update_ratio_button = wx.Button(self.panel, -1, "Change ratio")
@@ -48,9 +45,7 @@ class InputFrame(wx.Frame):
         self.progressText.SetFont(font)
 
         self.ratio_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.ratio_sizer.Add(
-            self.ratio_label, wx.SizerFlags().Border(wx.RIGHT, 20)
-        )
+        self.ratio_sizer.Add(self.ratio_label, wx.SizerFlags().Border(wx.RIGHT, 20))
         self.ratio_sizer.Add(
             self.update_ratio_button, wx.SizerFlags().Border(wx.TOP, -5)
         )
@@ -73,18 +68,12 @@ class InputFrame(wx.Frame):
         self.Bind(wx.EVT_UPDATE_UI, self.OnUpdate)
         self.Bind(wx.EVT_BUTTON, self.GetRatio, self.update_ratio_button)
 
-    def superAdd(self, sizer, item):
+    def superAdd(self, sizer: wx.BoxSizer, item: wx.StaticText | wx.BoxSizer):
         item_sizer = wx.BoxSizer(wx.HORIZONTAL)
         item_sizer.Add(item, wx.SizerFlags().Border(wx.LEFT, 25))
         sizer.Add(item_sizer, wx.SizerFlags().Border(wx.TOP, 10))
 
     def makeMenuBar(self):
-        """
-        A menu bar is composed of menus, which are composed of menu items.
-        This method builds a set of menus and binds handlers to be called
-        when the menu item is selected.
-        """
-
         menuBar = wx.MenuBar()
 
         filesMenu = wx.Menu()
@@ -100,13 +89,17 @@ class InputFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.OnOpen, filesItem)
         self.Bind(wx.EVT_MENU, self.OnExit, exitItem)
 
-    def blurImage(self, filename):
-        name = filename.split(FOLDER_SEPERATOR)[-1]
+    def blurImage(self, filename: str):
+        name = os.path.basename(filename)
         self.progressText.SetLabel(f"Bluring {name} ...")
         self.blur_queue.append(filename)
 
-    def GetRatio(self, event):
-        with wx.TextEntryDialog(self.panel, 'Type a new ratio:', "Ratio picker", "", style=wx.OK | wx.CANCEL) as entryDialog:
+    def GetRatio(self, _event: wx.CommandEvent):
+        error_message = "Valid formats: axb or a:b, where a and b are numbers."
+
+        with wx.TextEntryDialog(
+            self.panel, "Type a new ratio:", "Ratio picker", "", style=wx.OK | wx.CANCEL
+        ) as entryDialog:
             while True:
                 rt_id = entryDialog.ShowModal()
                 if rt_id == wx.ID_CANCEL:
@@ -115,40 +108,53 @@ class InputFrame(wx.Frame):
                 value = entryDialog.GetValue()
                 if value == "":
                     break
-                try:
-                    if ":" in value:
-                        a, b = value.split(":")
-                    elif "x" in value:
-                        a, b = value.split("x")
-                    a, b = float(a), float(b)
-                    self.ratio_label.SetLabel(f"Goal ratio: {a:.20g}:{b:.20g}")
-                    self.ratio_sizer.Layout()
-                    self.sizer.Layout()
-                    self.ratio = (a, b)
-                    break
-                except:
-                    entryDialog.SetValue("valid formats: axb and a:b, where a,b are numbers")
+
+                values = []
+                if ":" in value:
+                    values = value.split(":")
+                elif "x" in value:
+                    values = value.split("x")
+
+                if len(values) != 2:
+                    entryDialog.SetValue(error_message)
                     continue
 
-    def OnUpdate(self, event):
+                try:
+                    a, b = float(values[0]), float(values[1])
+                except ValueError:
+                    entryDialog.SetValue(error_message)
+                    continue
+
+                self.ratio_label.SetLabel(f"Goal ratio: {a:.6g}:{b:.6g}")
+                self.ratio_sizer.Layout()
+                self.sizer.Layout()
+                self.ratio = (a, b)
+                break
+
+    def OnUpdate(self, _event: wx.UpdateUIEvent):
         # this is probably a hack, but such is life
         if len(self.blur_queue) > 0:
             filename = self.blur_queue.pop(0)
-            name = filename.split(FOLDER_SEPERATOR)[-1]
+            name = os.path.basename(filename)
             try:
                 blur(filename, self.ratio)
                 self.progressText.SetLabel(f"Bluring {name} ...\nDone!")
-            except Exception as err:
+            except ValueError as err:
                 error_type = str(type(err))[8:-2]
-                self.progressText.SetLabel(f"Bluring {name} ...\n{error_type} occured: {err}")
+                self.progressText.SetLabel(
+                    f"Bluring {name} ...\n{error_type} occured: {err}"
+                )
             self.sizer.Layout()
 
-    def OnOpen(self, event):
+    def OnOpen(self, _event: wx.CommandEvent):
         # ask the user what new file to open
         wildcard = "Images (*.jpg,*.jpeg,*.png)|*.jpg;*.jpeg;*.png|All (*.*)|*.*"
-        with wx.FileDialog(self, "Open image file", wildcard=wildcard,
-                           style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
-
+        with wx.FileDialog(
+            self,
+            "Open image file",
+            wildcard=wildcard,
+            style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
+        ) as fileDialog:
             if fileDialog.ShowModal() == wx.ID_CANCEL:
                 return
 
@@ -156,17 +162,17 @@ class InputFrame(wx.Frame):
             try:
                 self.blurImage(pathname)
             except IOError:
-                wx.LogError("Cannot open file '%s'." % pathname)
+                wx.LogError(f"Cannot open file '{pathname}'.")
 
-    def OnExit(self, event):
+    def OnExit(self, _event: wx.CommandEvent):
         """Close the frame, terminating the application."""
         self.Close(True)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # When this module is run (not imported) then create the app, the
     # frame, show it, and start the event loop.
     app = wx.App()
-    frm = InputFrame(None, title='Blurinator', size=(640, 360))
+    frm = InputFrame(None, title="Blurinator", size=(640, 360))
     frm.Show()
     app.MainLoop()
