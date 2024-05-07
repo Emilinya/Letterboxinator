@@ -10,7 +10,7 @@ def blur(filename: str, ratio: tuple[float, float] = (16, 9)):
     image = Image.open(filename)
 
     # orient image correctly
-    image = ImageOps.exif_transpose(image)
+    ImageOps.exif_transpose(image, in_place=True)
 
     width, height = image.size
     if width / height > num_ratio:
@@ -51,8 +51,3 @@ def blur(filename: str, ratio: tuple[float, float] = (16, 9)):
         quality=95,
         icc_profile=letterboxed_image.info.get("icc_profile", ""),
     )
-
-
-if __name__ == "__main__":
-    blur("exif_test.jpg")
-    blur("png_test.png")
