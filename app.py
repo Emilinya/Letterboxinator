@@ -1,178 +1,210 @@
 import os
-import wx
+import sys
+import time
+from dataclasses import dataclass
 
-from blur import blur
+import PySide6.QtGui as qgui
+import PySide6.QtCore as qcore
+import PySide6.QtWidgets as qwidgets
 
-
-class FileDrop(wx.FileDropTarget):
-    def __init__(self, func):
-        wx.FileDropTarget.__init__(self)
-        self.func = func
-
-    def OnDropFiles(self, _x: int, _y: int, filenames: list[str]):
-        for filename in filenames:
-            self.func(filename)
-
-        return True
+from letterbox import add_letterbox
 
 
-class InputFrame(wx.Frame):
-    """
-    A Frame that says Hello World
-    """
+@dataclass
+class ComboBoxData:
+    items: list[tuple[str, str]]
 
-    def __init__(self, *args, **kw):
-        super(InputFrame, self).__init__(*args, **kw)
+    def apply_to(self, combobox: qwidgets.QComboBox):
+        for i, (item, tooltip) in enumerate(self.items):
+            combobox.addItem(item)
+            combobox.setItemData(i, tooltip, qgui.Qt.ItemDataRole.ToolTipRole)
 
-        self.blur_queue: list[str] = []
 
-        self.panel = wx.Panel(self)
+class MainWidget(qwidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Drag and Drop")
+        self.setWindowIcon(qgui.QIcon("icon.png"))
+        self.resize(680, 480)
+        self.setAcceptDrops(True)
+        self.setStyleSheet("font-size: 24px;")
 
-        text = wx.StaticText(self.panel, label="Drag and drop an image to blur it")
-        font = text.GetFont()
-        font.PointSize += 5
-        bold_font = font.Bold()
-        bold_font.PointSize += 5
-        text.SetFont(bold_font)
+        title = qwidgets.QLabel("Drag and drop an image to add letterbox")
+        title.setStyleSheet("font-size: 34px; font-weight: bold;")
 
-        self.ratio: tuple[float, float] = (16, 9)
-        self.ratio_label = wx.StaticText(self.panel, -1, "Goal ratio: 16x9")
-        self.ratio_label.SetFont(font)
-        self.update_ratio_button = wx.Button(self.panel, -1, "Change ratio")
-        self.update_ratio_button.SetFont(font)
+        mode_data = ComboBoxData(
+            [
+                ("Blur", "Blur tooltip"),
+                ("Color", "Color tooltip"),
+                ("Extrude", "Extrude tooltip"),
+            ]
+        )
+        self.mode_select = qwidgets.QComboBox()
+        mode_data.apply_to(self.mode_select)
+        self.mode_select.currentTextChanged.connect(self.mode_changed)
 
-        self.progressText = wx.StaticText(self.panel, label="")
-        self.progressText.SetFont(font)
+        self.ratio = (16.0, 9.0)
+        ratio_label = qwidgets.QLabel("Goal ratio:")
+        self.ratio_input = qwidgets.QLineEdit(
+            f"{self.ratio[0]:.3g}x{self.ratio[1]:.3g}"
+        )
+        self.ratio_input.textChanged.connect(self.validate_ratio)
+        ratio_layout = qwidgets.QHBoxLayout()
+        ratio_layout.addWidget(ratio_label)
+        ratio_layout.addWidget(self.ratio_input)
 
-        self.ratio_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.ratio_sizer.Add(self.ratio_label, wx.SizerFlags().Border(wx.RIGHT, 20))
-        self.ratio_sizer.Add(
-            self.update_ratio_button, wx.SizerFlags().Border(wx.TOP, -5)
+        self.radius = 70
+        radius_label = qwidgets.QLabel("Blur radius:")
+        self.radius_input = qwidgets.QLineEdit(f"{self.radius}")
+        self.radius_input.textChanged.connect(self.validate_radius)
+        radius_layout = qwidgets.QHBoxLayout()
+        radius_layout.addWidget(radius_label)
+        radius_layout.addWidget(self.radius_input)
+        self.radius_frame = qwidgets.QFrame()
+        radius_layout.setContentsMargins(0, 0, 0, 0)
+        self.radius_frame.setLayout(radius_layout)
+
+        self.color = qgui.QColor.fromString("white")
+        color_label = qwidgets.QLabel("Background color:")
+        # Using a button for this is so hacky, sorry :(
+        self.color_display = qwidgets.QPushButton("")
+        self.color_display.setDisabled(True)
+        self.color_display.setStyleSheet(
+            f"background-color: {self.color.name()}; border: 2px solid black"
+        )
+        color_button = qwidgets.QPushButton("Select new color")
+        color_button.clicked.connect(self.open_color_dialog)
+        self.color_input = qwidgets.QColorDialog(self.color)
+        self.color_input.colorSelected.connect(self.accept_color)
+        color_layout = qwidgets.QHBoxLayout()
+        color_layout.addWidget(color_label)
+        color_layout.addWidget(self.color_display)
+        color_layout.addWidget(color_button)
+        color_layout.addStretch(0)
+        color_layout.setContentsMargins(0, 0, 0, 0)
+        self.color_frame = qwidgets.QFrame()
+        self.color_frame.setLayout(color_layout)
+
+        self.output_text = qwidgets.QLabel("")
+        self.output_text.setWordWrap(True)
+
+        main_layout = qwidgets.QVBoxLayout(self)
+        main_layout.addWidget(title)
+        main_layout.addWidget(self.mode_select)
+        main_layout.addLayout(ratio_layout)
+        main_layout.addWidget(self.radius_frame)
+        main_layout.addWidget(self.color_frame)
+        main_layout.addWidget(self.output_text)
+        main_layout.addStretch(0)
+
+        self.mode_changed(self.mode_select.currentText())
+
+    def mode_changed(self, text: str):
+        if text == "Blur":
+            self.color_frame.hide()
+            self.radius_frame.show()
+        elif text == "Color":
+            self.color_frame.show()
+            self.radius_frame.hide()
+        else:
+            self.color_frame.hide()
+            self.radius_frame.hide()
+
+    def validate_ratio(self, new_ratio: str):
+        if "x" in new_ratio:
+            values = new_ratio.split("x")
+        elif ":" in new_ratio:
+            values = new_ratio.split(":")
+        else:
+            values = []
+
+        if len(values) == 2:
+            try:
+                self.ratio = (float(values[0]), float(values[1]))
+                self.ratio_input.setStyleSheet("color: black;")
+                return
+            except ValueError:
+                pass
+
+        self.ratio_input.setStyleSheet("color: red;")
+
+    def validate_radius(self, new_radius: str):
+        try:
+            self.radius = int(new_radius)
+            self.radius_input.setStyleSheet("color: black;")
+        except ValueError:
+            self.radius_input.setStyleSheet("color: red;")
+
+    def open_color_dialog(self):
+        self.color_input.show()
+
+    def accept_color(self, color: qgui.QColor):
+        self.color = color
+        self.color_display.setStyleSheet(
+            f"background-color: {self.color.name()}; border: 2px solid black"
         )
 
-        # create a sizer to manage the layout of child widgets
-        self.sizer = wx.BoxSizer(wx.VERTICAL)
-        self.superAdd(self.sizer, text)
-        self.superAdd(self.sizer, self.ratio_sizer)
-        self.superAdd(self.sizer, self.progressText)
-        self.panel.SetSizer(self.sizer)
-
-        # create a drop target
-        drop_target = FileDrop(self.blurImage)
-        self.SetDropTarget(drop_target)
-
-        # create a menu bar
-        self.makeMenuBar()
-
-        # bind
-        self.Bind(wx.EVT_UPDATE_UI, self.OnUpdate)
-        self.Bind(wx.EVT_BUTTON, self.GetRatio, self.update_ratio_button)
-
-    def superAdd(self, sizer: wx.BoxSizer, item: wx.StaticText | wx.BoxSizer):
-        item_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        item_sizer.Add(item, wx.SizerFlags().Border(wx.LEFT, 25))
-        sizer.Add(item_sizer, wx.SizerFlags().Border(wx.TOP, 10))
-
-    def makeMenuBar(self):
-        menuBar = wx.MenuBar()
-
-        filesMenu = wx.Menu()
-        filesItem = filesMenu.Append(-1, "&Browse files")
-
-        exitMenu = wx.Menu()
-        exitItem = exitMenu.Append(wx.ID_EXIT)
-
-        menuBar.Append(filesMenu, "&Files")
-        menuBar.Append(exitMenu, "&Exit")
-        self.SetMenuBar(menuBar)
-
-        self.Bind(wx.EVT_MENU, self.OnOpen, filesItem)
-        self.Bind(wx.EVT_MENU, self.OnExit, exitItem)
-
-    def blurImage(self, filename: str):
-        name = os.path.basename(filename)
-        self.progressText.SetLabel(f"Bluring {name} ...")
-        self.blur_queue.append(filename)
-
-    def GetRatio(self, _event: wx.CommandEvent):
-        error_message = "Valid formats: axb or a:b, where a and b are numbers."
-
-        with wx.TextEntryDialog(
-            self.panel, "Type a new ratio:", "Ratio picker", "", style=wx.OK | wx.CANCEL
-        ) as entryDialog:
-            while True:
-                rt_id = entryDialog.ShowModal()
-                if rt_id == wx.ID_CANCEL:
-                    return
-
-                value = entryDialog.GetValue()
-                if value == "":
-                    break
-
-                values = []
-                if ":" in value:
-                    values = value.split(":")
-                elif "x" in value:
-                    values = value.split("x")
-
-                if len(values) != 2:
-                    entryDialog.SetValue(error_message)
-                    continue
-
-                try:
-                    a, b = float(values[0]), float(values[1])
-                except ValueError:
-                    entryDialog.SetValue(error_message)
-                    continue
-
-                self.ratio_label.SetLabel(f"Goal ratio: {a:.6g}:{b:.6g}")
-                self.ratio_sizer.Layout()
-                self.sizer.Layout()
-                self.ratio = (a, b)
-                break
-
-    def OnUpdate(self, _event: wx.UpdateUIEvent):
-        # this is probably a hack, but such is life
-        if len(self.blur_queue) > 0:
-            filename = self.blur_queue.pop(0)
-            name = os.path.basename(filename)
-            try:
-                blur(filename, self.ratio)
-                self.progressText.SetLabel(f"Bluring {name} ...\nDone!")
-            except ValueError as err:
-                error_type = str(type(err))[8:-2]
-                self.progressText.SetLabel(
-                    f"Bluring {name} ...\n{error_type} occured: {err}"
-                )
-            self.sizer.Layout()
-
-    def OnOpen(self, _event: wx.CommandEvent):
-        # ask the user what new file to open
-        wildcard = "Images (*.jpg,*.jpeg,*.png)|*.jpg;*.jpeg;*.png|All (*.*)|*.*"
-        with wx.FileDialog(
-            self,
-            "Open image file",
-            wildcard=wildcard,
-            style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
-        ) as fileDialog:
-            if fileDialog.ShowModal() == wx.ID_CANCEL:
+    def dragEnterEvent(self, event: qgui.QDragEnterEvent):
+        for url in [url.fileName() for url in event.mimeData().urls()]:
+            # TODO: Support folders
+            if os.path.isdir(url):
+                event.ignore()
                 return
 
-            pathname = fileDialog.GetPath()
-            try:
-                self.blurImage(pathname)
-            except IOError:
-                wx.LogError(f"Cannot open file '{pathname}'.")
+            # Is this all the extentions I should support? Probably
+            extention = os.path.splitext(url)[1]
+            if extention.lower() not in (
+                ".jpg",
+                ".jpeg",
+                ".png",
+                ".j2k",
+                ".jp2",
+                ".jpx",
+                ".webp",
+            ):
+                event.ignore()
+                return
 
-    def OnExit(self, _event: wx.CommandEvent):
-        """Close the frame, terminating the application."""
-        self.Close(True)
+        event.accept()
+
+    def dropEvent(self, event: qgui.QDropEvent):
+        showed_error = False
+        mode = self.mode_select.currentText()
+        files = [u.toLocalFile() for u in event.mimeData().urls()]
+        for i, filename in enumerate(files):
+            showed_error = False
+            basename = os.path.basename(filename)
+
+            self.output_text.setText(f"Adding letterbox to {basename} ...")
+            qcore.QCoreApplication.processEvents()
+
+            try:
+                color = (
+                    self.color.red(),
+                    self.color.green(),
+                    self.color.blue(),
+                    self.color.alpha(),
+                )
+                add_letterbox(filename, self.ratio, mode, self.radius, color)
+            # pylint: disable=broad-exception-caught
+            except Exception as err:
+                error_type = str(type(err))[8:-2]
+                self.output_text.setText(
+                    f"Processing {basename} gave {error_type}: {err}"
+                )
+                qcore.QCoreApplication.processEvents()
+                showed_error = True
+                if i != len(files) - 1:
+                    time.sleep(3)
+
+        if not showed_error:
+            self.output_text.setText("Done!")
 
 
 if __name__ == "__main__":
-    # When this module is run (not imported) then create the app, the
-    # frame, show it, and start the event loop.
-    app = wx.App()
-    frm = InputFrame(None, title="Blurinator", size=(640, 360))
-    frm.Show()
-    app.MainLoop()
+    app = qwidgets.QApplication(sys.argv)
+
+    ui = MainWidget()
+    ui.show()
+
+    sys.exit(app.exec())

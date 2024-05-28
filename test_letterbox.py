@@ -5,7 +5,7 @@ import pytest
 import numpy as np
 from PIL import Image, ImageOps
 
-from blur import blur
+from letterbox import add_letterbox
 
 # pylint: disable=redefined-outer-name,unused-argument
 
@@ -47,7 +47,7 @@ def get_image_box(width: int, height: int):
 
 def test_blur(image_filenames, cleanup):
     for filename in image_filenames:
-        blur(filename)
+        add_letterbox(filename, mode="Blur")
         path, extension = os.path.splitext(filename)
         letterboxed_image = Image.open(f"{path}_16x9{extension}")
 
