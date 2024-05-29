@@ -12,7 +12,7 @@ from letterbox import add_letterbox
 
 @pytest.fixture()
 def image_filenames():
-    return ["png_test.png", "exif_test.jpg"]
+    return ["media/png_test.png", "media/exif_test.jpg"]
 
 
 @pytest.fixture()

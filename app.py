@@ -23,8 +23,8 @@ class ComboBoxData:
 class MainWidget(qwidgets.QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Drag and Drop")
-        self.setWindowIcon(qgui.QIcon("icon.png"))
+        self.setWindowTitle("Letterboxinator")
+        self.setWindowIcon(qgui.QIcon("media/icon.png"))
         self.resize(680, 480)
         self.setAcceptDrops(True)
         self.setStyleSheet("font-size: 24px;")
@@ -34,14 +34,19 @@ class MainWidget(qwidgets.QWidget):
 
         mode_data = ComboBoxData(
             [
-                ("Blur", "Blur tooltip"),
-                ("Color", "Color tooltip"),
-                ("Extrude", "Extrude tooltip"),
+                ("Blur", "Fill background with a blured copy of the image"),
+                ("Color", "Fill background with a color"),
+                ("Extend", "Fill background by extending the edge pixels"),
             ]
         )
+        mode_label = qwidgets.QLabel("Letterbox mode:")
         self.mode_select = qwidgets.QComboBox()
         mode_data.apply_to(self.mode_select)
         self.mode_select.currentTextChanged.connect(self.mode_changed)
+        mode_layout = qwidgets.QHBoxLayout()
+        mode_layout.addWidget(mode_label)
+        mode_layout.addWidget(self.mode_select)
+        mode_layout.addStretch(0)
 
         self.ratio = (16.0, 9.0)
         ratio_label = qwidgets.QLabel("Goal ratio:")
@@ -52,6 +57,14 @@ class MainWidget(qwidgets.QWidget):
         ratio_layout = qwidgets.QHBoxLayout()
         ratio_layout.addWidget(ratio_label)
         ratio_layout.addWidget(self.ratio_input)
+        ratio_layout.addStretch(0)
+        ratio_frame = qwidgets.QFrame()
+        ratio_layout.setContentsMargins(0, 0, 0, 0)
+        ratio_frame.setLayout(ratio_layout)
+        ratio_frame.setToolTip(
+            "The ratio you want the letterboxed image to have.\n"
+            + "Must be axb or a:b, where a and b are floats"
+        )
 
         self.radius = 70
         radius_label = qwidgets.QLabel("Blur radius:")
@@ -60,9 +73,14 @@ class MainWidget(qwidgets.QWidget):
         radius_layout = qwidgets.QHBoxLayout()
         radius_layout.addWidget(radius_label)
         radius_layout.addWidget(self.radius_input)
+        radius_layout.addStretch(0)
         self.radius_frame = qwidgets.QFrame()
         radius_layout.setContentsMargins(0, 0, 0, 0)
         self.radius_frame.setLayout(radius_layout)
+        self.radius_frame.setToolTip(
+            "The radius of the gaussian blur.\n"
+            + "A larger radius results in a more blured image"
+        )
 
         self.color = qgui.QColor.fromString("white")
         color_label = qwidgets.QLabel("Background color:")
@@ -90,8 +108,8 @@ class MainWidget(qwidgets.QWidget):
 
         main_layout = qwidgets.QVBoxLayout(self)
         main_layout.addWidget(title)
-        main_layout.addWidget(self.mode_select)
-        main_layout.addLayout(ratio_layout)
+        main_layout.addLayout(mode_layout)
+        main_layout.addWidget(ratio_frame)
         main_layout.addWidget(self.radius_frame)
         main_layout.addWidget(self.color_frame)
         main_layout.addWidget(self.output_text)
@@ -99,16 +117,18 @@ class MainWidget(qwidgets.QWidget):
 
         self.mode_changed(self.mode_select.currentText())
 
-    def mode_changed(self, text: str):
-        if text == "Blur":
+    def mode_changed(self, mode: str):
+        if mode == "Blur":
             self.color_frame.hide()
             self.radius_frame.show()
-        elif text == "Color":
+        elif mode == "Color":
             self.color_frame.show()
             self.radius_frame.hide()
-        else:
+        elif mode == "Extend":
             self.color_frame.hide()
             self.radius_frame.hide()
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
 
     def validate_ratio(self, new_ratio: str):
         if "x" in new_ratio:

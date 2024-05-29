@@ -42,7 +42,7 @@ def apply_color(
     return letterboxed_image
 
 
-def apply_extrude(
+def apply_extend(
     image: Image.Image,
     new_size: tuple[int, int],
     img_box: tuple[int, int, int, int],
@@ -114,8 +114,8 @@ def add_letterbox(
         letterboxed_image = apply_color(
             image, (new_width, new_height), img_box, background_color
         )
-    elif mode == "Extrude":
-        letterboxed_image = apply_extrude(image, (new_width, new_height), img_box)
+    elif mode == "Extend":
+        letterboxed_image = apply_extend(image, (new_width, new_height), img_box)
     else:
         raise ValueError(f"Unknown mode: {mode}")
 
