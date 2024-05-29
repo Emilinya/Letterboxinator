@@ -18,7 +18,7 @@ Note that all the examples here showcase a ratio of 16x9. The program can handle
 <figure>
     <img src="media/example2.png"
          alt="Photo of starch with colored background.">
-    <figcaption>Origional image on the left, same image in 16x9 with colored background on the right. Image is by <em>siro look</em>, available on <a href="https://danbooru.donmai.us/posts/6562803">danbooru</a>.</figcaption>
+    <figcaption>Origional image on the left, same image in 16x9 with colored background on the right. Image is by <em>riejiu</em>, available on <a href="https://twitter.com/riejiu/status/1653036277581905920">twitter</a>.</figcaption>
 </figure>
 
 ### Extend
